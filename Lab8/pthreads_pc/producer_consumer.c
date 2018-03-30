@@ -298,7 +298,7 @@ void *producer (void *parg){													/* PRODUCER */
 		 * the configured maximum, if so, we can quit.
 		 */
 		if(*total_produced >= WORK_MAX){
-			pthread_cond_broadcast(fifo->notEmpty);
+			pthread_mutex_unlock(fifo->mutex);
 			break;
 		}
 
@@ -314,6 +314,7 @@ void *producer (void *parg){													/* PRODUCER */
 		 * Announce the production outside the critical section
 		 */
 		printf("prod %d:  %d.\n", my_tid, item_produced);
+		pthread_cond_broadcast(fifo->notEmpty);
 		pthread_mutex_unlock(fifo->mutex);
 	}
 
@@ -355,7 +356,7 @@ void *consumer (void *carg){													/* CONSUMER */
 		 * stop
 		 */
 		if(*total_consumed >= WORK_MAX){
-			pthread_cond_broadcast(fifo->notFull);
+			pthread_mutex_unlock(fifo->mutex);
 			break;
 		}
 
@@ -374,6 +375,7 @@ void *consumer (void *carg){													/* CONSUMER */
 		 */
 		do_work(CONSUMER_CPU,CONSUMER_CPU);
 		printf ("con %d:   %d.\n", my_tid, item_consumed);
+		pthread_cond_broadcast(fifo->notFull);
 		pthread_mutex_unlock(fifo->mutex);
 	 }
 

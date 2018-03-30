@@ -257,124 +257,129 @@ void do_work(int cpu_iterations, int blocking_time)
   }
 }
 
-void *producer (void *parg)
-{
-  queue  *fifo;
-  int     item_produced;
-  pcdata *mydata;
-  int     my_tid;
-  int    *total_produced;
+void *producer (void *parg){													/* PRODUCER */
+	queue  *fifo;
+	int     item_produced;
+	pcdata *mydata;
+	int     my_tid;
+	int    *total_produced;
 
-  mydata = (pcdata *) parg;
+	mydata = (pcdata *) parg;
 
-  fifo           = mydata->q;
-  total_produced = mydata->count;
-  my_tid         = mydata->tid;
+	fifo           = mydata->q;
+	total_produced = mydata->count;
+	my_tid         = mydata->tid;
 
-  /*
-   * Continue producing until the total produced reaches the
-   * configured maximum
-   */
-  while (1) {
-    /*
-     * Do work to produce an item. Then get a slot in the queue for
-     * it. Finally, at the end of the loop, outside the critical
-     * section, announce that we produced it.
-     */
-    do_work(PRODUCER_CPU, PRODUCER_BLOCK);
+	/*
+	 * Continue producing until the total produced reaches the
+	 * configured maximum
+	 */
+	while (1){
+		pthread_mutex_lock(fifo->mutex);
 
-    /*
-     * If the queue is full, we have no place to put anything we
-     * produce, so wait until it is not full.
-     */
-    while (fifo->full && *total_produced != WORK_MAX) {
-      printf ("prod %d:  FULL.\n", my_tid);
-    }
+		/*
+		 * Do work to produce an item. Then get a slot in the queue for
+		 * it. Finally, at the end of the loop, outside the critical
+		 * section, announce that we produced it.
+		 */
+		do_work(PRODUCER_CPU, PRODUCER_BLOCK);
 
-    /*
-     * Check to see if the total produced by all producers has reached
-     * the configured maximum, if so, we can quit.
-     */
-    if (*total_produced >= WORK_MAX) {
-      break;
-    }
+		/*
+		 * If the queue is full, we have no place to put anything we
+		 * produce, so wait until it is not full.
+		 */
+		if(fifo->full && *total_produced != WORK_MAX){
+			printf ("prod %d:  FULL.\n", my_tid);
+			pthread_cond_wait(fifo->notFull, fifo->mutex);
+		}
 
-    /*
-     * OK, so we produce an item. Increment the counter of total
-     * widgets produced, and add the new widget ID, its number, to the
-     * queue.
-     */
-    item_produced = (*total_produced)++;
-    queueAdd (fifo, item_produced);
+		/*
+		 * Check to see if the total produced by all producers has reached
+		 * the configured maximum, if so, we can quit.
+		 */
+		if(*total_produced >= WORK_MAX){
+			pthread_cond_broadcast(fifo->notEmpty);
+			break;
+		}
 
-    /*
-     * Announce the production outside the critical section
-     */
-    printf("prod %d:  %d.\n", my_tid, item_produced);
+		/*
+		 * OK, so we produce an item. Increment the counter of total
+		 * widgets produced, and add the new widget ID, its number, to the
+		 * queue.
+		 */
+		item_produced = (*total_produced)++;
+		queueAdd (fifo, item_produced);
 
-  }
+		/*
+		 * Announce the production outside the critical section
+		 */
+		printf("prod %d:  %d.\n", my_tid, item_produced);
+		pthread_mutex_unlock(fifo->mutex);
+	}
 
-  printf("prod %d:  exited\n", my_tid);
-  return (NULL);
+	printf("prod %d:  exited\n", my_tid);
+	return (NULL);
 }
 
-void *consumer (void *carg)
-{
-  queue  *fifo;
-  int     item_consumed;
-  pcdata *mydata;
-  int     my_tid;
-  int    *total_consumed;
+void *consumer (void *carg){													/* CONSUMER */
+	queue  *fifo;
+	int     item_consumed;
+	pcdata *mydata;
+	int     my_tid;
+	int    *total_consumed;
 
-  mydata = (pcdata *) carg;
+	mydata = (pcdata *) carg;
 
-  fifo           = mydata->q;
-  total_consumed = mydata->count;
-  my_tid         = mydata->tid;
+	fifo           = mydata->q;
+	total_consumed = mydata->count;
+	my_tid         = mydata->tid;
 
-  /*
-   * Continue producing until the total consumed by all consumers
-   * reaches the configured maximum
-   */
-  while (1) {
-    /*
-     * If the queue is empty, there is nothing to do, so wait until it
-     * si not empty.
-     */
-    while (fifo->empty && *total_consumed != WORK_MAX) {
-      printf ("con %d:   EMPTY.\n", my_tid);
-    }
+	/*
+	 * Continue producing until the total consumed by all consumers
+	 * reaches the configured maximum
+	 */
+	while (1) {
+		pthread_mutex_lock(fifo->mutex);
 
-    /*
-     * If total consumption has reached the configured limit, we can
-     * stop
-     */
-    if (*total_consumed >= WORK_MAX) {
-      break;
-    }
+		/*
+		 * If the queue is empty, there is nothing to do, so wait until it
+		 * is not empty.
+		 */
+		if(fifo->empty && *total_consumed != WORK_MAX){
+			printf ("con %d:   EMPTY.\n", my_tid);
+			pthread_cond_wait(fifo->notEmpty, fifo->mutex);
+		}
 
-    /*
-     * Remove the next item from the queue. Increment the count of the
-     * total consumed. Note that item_consumed is a local copy so this
-     * thread can retain a memory of which item it consumed even if
-     * others are busy consuming them.
-     */
-    queueRemove (fifo, &item_consumed);
-    (*total_consumed)++;
+		/*
+		 * If total consumption has reached the configured limit, we can
+		 * stop
+		 */
+		if(*total_consumed >= WORK_MAX){
+			pthread_cond_broadcast(fifo->notFull);
+			break;
+		}
 
+		/*
+		 * Remove the next item from the queue. Increment the count of the
+		 * total consumed. Note that item_consumed is a local copy so this
+		 * thread can retain a memory of which item it consumed even if
+		 * others are busy consuming them.
+		 */
+		queueRemove (fifo, &item_consumed);
+		(*total_consumed)++;
 
-    /*
-     * Do work outside the critical region to consume the item
-     * obtained from the queue and then announce its consumption.
-     */
-    do_work(CONSUMER_CPU,CONSUMER_CPU);
-    printf ("con %d:   %d.\n", my_tid, item_consumed);
+		/*
+		 * Do work outside the critical region to consume the item
+		 * obtained from the queue and then announce its consumption.
+		 */
+		do_work(CONSUMER_CPU,CONSUMER_CPU);
+		printf ("con %d:   %d.\n", my_tid, item_consumed);
+		pthread_mutex_unlock(fifo->mutex);
+	 }
 
-  }
-
-  printf("con %d:   exited\n", my_tid);
-  return (NULL);
-}
+	 printf("con %d:   exited\n", my_tid);
+	 return (NULL);
+ }
 
 /***************************************************
  *   Main allocates structures, creates threads,   *

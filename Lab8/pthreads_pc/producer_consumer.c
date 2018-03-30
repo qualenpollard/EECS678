@@ -288,7 +288,7 @@ void *producer (void *parg){													/* PRODUCER */
 		 * If the queue is full, we have no place to put anything we
 		 * produce, so wait until it is not full.
 		 */
-		if(fifo->full && *total_produced != WORK_MAX){
+		while(fifo->full && *total_produced != WORK_MAX){
 			printf ("prod %d:  FULL.\n", my_tid);
 			pthread_cond_wait(fifo->notFull, fifo->mutex);
 		}
@@ -345,7 +345,7 @@ void *consumer (void *carg){													/* CONSUMER */
 		 * If the queue is empty, there is nothing to do, so wait until it
 		 * is not empty.
 		 */
-		if(fifo->empty && *total_consumed != WORK_MAX){
+		while(fifo->empty && *total_consumed != WORK_MAX){
 			printf ("con %d:   EMPTY.\n", my_tid);
 			pthread_cond_wait(fifo->notEmpty, fifo->mutex);
 		}
@@ -380,6 +380,7 @@ void *consumer (void *carg){													/* CONSUMER */
 	 printf("con %d:   exited\n", my_tid);
 	 return (NULL);
  }
+
 
 /***************************************************
  *   Main allocates structures, creates threads,   *
